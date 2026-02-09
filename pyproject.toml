@@ -1,0 +1,10 @@
+[project]
+name = "grocery-to-ticktick"
+version = "0.1.0"
+description = "Extract grocery items from images and sync them to TickTick"
+requires-python = ">=3.10"
+dependencies = [
+  "openai>=1.60.0",
+  "requests>=2.31.0",
+]
+
