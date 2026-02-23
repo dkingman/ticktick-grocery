@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""Extract grocery items from an image and add them to a TickTick list."""
-
-from __future__ import annotations
-
 import argparse
 import base64
 import json
@@ -20,6 +15,8 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 import requests
 from openai import OpenAI, OpenAIError
+
+from validation import ImportRequest, validate_import_request
 
 TICKTICK_API_BASE = "https://api.ticktick.com/open/v1"
 TICKTICK_AUTHORIZE_URL = "https://ticktick.com/oauth/authorize"
@@ -181,9 +178,7 @@ def _make_callback_handler(result: _OAuthResult):
                     b"TickTick authorization received. Return to terminal."
                 )
             else:
-                self.wfile.write(
-                    b"TickTick authorization failed. Return to terminal."
-                )
+                self.wfile.write(b"TickTick authorization failed. Return to terminal.")
 
         def log_message(self, format: str, *args) -> None:  # noqa: A003
             return
@@ -244,7 +239,9 @@ def get_or_create_ticktick_token(args: argparse.Namespace) -> str:
         f"{urlencode({'scope': args.oauth_scope, 'client_id': client_id, 'state': state, 'redirect_uri': redirect_uri, 'response_type': 'code'}, quote_via=quote)}"
     )
 
-    server = HTTPServer((args.oauth_host, args.oauth_port), _make_callback_handler(result))
+    server = HTTPServer(
+        (args.oauth_host, args.oauth_port), _make_callback_handler(result)
+    )
     thread = threading.Thread(target=server.handle_request, daemon=True)
     thread.start()
 
@@ -322,6 +319,25 @@ def create_task(access_token: str, title: str, project_id: str) -> dict:
     return result
 
 
+def sync_items_to_project(
+    access_token: str, project_name: str, items: Iterable[str]
+) -> tuple[list[str], list[str]]:
+    project_id = get_project_id(access_token, project_name)
+    existing = get_existing_task_titles(access_token, project_id)
+
+    created: list[str] = []
+    skipped: list[str] = []
+    for item in items:
+        if item.casefold() in existing:
+            skipped.append(item)
+            continue
+        create_task(access_token, item, project_id)
+        existing.add(item.casefold())
+        created.append(item)
+
+    return created, skipped
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Extract ingredients from an image and add them to TickTick."
@@ -390,15 +406,25 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
-    if not args.image.exists():
-        print(f"Image not found: {args.image}", file=sys.stderr)
-        return 1
-
-    if not os.environ.get("OPENAI_API_KEY"):
-        print("Missing env var: OPENAI_API_KEY", file=sys.stderr)
-        return 1
-
     try:
+        ticktick_access_token = ""
+        if not args.dry_run:
+            ticktick_access_token = get_or_create_ticktick_token(args)
+
+        req = ImportRequest(
+            image_path=args.image,
+            project=args.project,
+            model=args.model,
+            dry_run=args.dry_run,
+            ticktick_access_token=ticktick_access_token,
+            openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+        )
+        errors = validate_import_request(req)
+        if errors:
+            for error in errors:
+                print(error, file=sys.stderr)
+            return 1
+
         items = extract_ingredients(args.image, args.model)
         if not items:
             print("No grocery items found in the image.")
@@ -409,25 +435,14 @@ def main() -> int:
                 print(item)
             return 0
 
-        ticktick_access_token = get_or_create_ticktick_token(args)
         print(f"Extracted {len(items)} items from image:")
         for item in items:
             print(f"- {item}")
 
-        project_id = get_project_id(ticktick_access_token, args.project)
-        existing = get_existing_task_titles(ticktick_access_token, project_id)
-
-        created = 0
-        skipped = 0
-        for item in items:
-            if item.casefold() in existing:
-                skipped += 1
-                continue
-            create_task(ticktick_access_token, item, project_id)
-            existing.add(item.casefold())
-            created += 1
-
-        print(f"Done. Created {created} tasks, skipped {skipped} duplicates.")
+        created, skipped = sync_items_to_project(
+            ticktick_access_token, args.project, items
+        )
+        print(f"Done. Created {len(created)} tasks, skipped {len(skipped)} duplicates.")
         return 0
 
     except (

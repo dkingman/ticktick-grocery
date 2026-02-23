@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""Run TickTick OAuth locally and print export commands for tokens."""
-
-from __future__ import annotations
-
 import argparse
 import base64
 import json
@@ -146,7 +141,9 @@ def main() -> int:
         print(f"OAuth error returned by TickTick: {result.error}")
         return 1
     if not result.code:
-        print("No authorization code received. Confirm redirect URI in TickTick app settings.")
+        print(
+            "No authorization code received. Confirm redirect URI in TickTick app settings."
+        )
         return 1
     if result.state != state:
         print("State mismatch; aborting for safety.")
@@ -185,4 +182,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

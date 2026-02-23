@@ -87,7 +87,7 @@ class MainErrorHandlingTests(unittest.TestCase):
                 project="Grocery",
                 model="gpt-4.1-mini",
                 dry_run=False,
-                ticktick_access_token="",
+                ticktick_access_token="test-token",
                 ticktick_client_id="",
                 ticktick_client_secret="",
                 oauth_host="127.0.0.1",
@@ -109,6 +109,23 @@ class MainErrorHandlingTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 1)
             self.assertIn("Error: boom", stderr.getvalue())
+
+
+class SyncItemsTests(unittest.TestCase):
+    def test_sync_items_to_project_tracks_created_and_skipped(self) -> None:
+        with patch("grocery_to_ticktick.get_project_id", return_value="project-123"):
+            with patch(
+                "grocery_to_ticktick.get_existing_task_titles",
+                return_value={"milk"},
+            ):
+                with patch("grocery_to_ticktick.create_task") as mock_create:
+                    created, skipped = app.sync_items_to_project(
+                        "token", "Errands", ["Milk", "Bread", "Bread"]
+                    )
+
+        self.assertEqual(created, ["Bread"])
+        self.assertEqual(skipped, ["Milk", "Bread"])
+        mock_create.assert_called_once_with("token", "Bread", "project-123")
 
 
 if __name__ == "__main__":
