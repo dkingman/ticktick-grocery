@@ -13,11 +13,12 @@ COPY pyproject.toml uv.lock ./
 RUN apt-get update \
   && apt-get install -y --no-install-recommends libheif1 \
   && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -u 1000 appuser
 RUN uv sync --frozen --no-dev
+RUN chown -R appuser:appuser /app/.venv
 
 COPY . .
 
-RUN useradd -m -u 1000 appuser
 USER appuser
 
 EXPOSE 8090
