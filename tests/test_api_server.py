@@ -56,6 +56,23 @@ class TickTickApiTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 415)
 
+    def test_heic_upload_without_suffix_uses_heic_extension(self) -> None:
+        captured: dict = {}
+
+        def fake_extract(path, model):
+            captured["path"] = path
+            return []
+
+        with patch.dict(os.environ, self.base_env, clear=True):
+            with patch("api_server.extract_ingredients", side_effect=fake_extract):
+                response = self.client.post(
+                    "/api/ticktick/import",
+                    headers=self._auth_headers(),
+                    files={"image": ("upload", b"fake", "image/heic")},
+                )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(captured["path"].suffix, ".heic")
+
     def test_oversized_upload_returns_413(self) -> None:
         env = dict(self.base_env)
         env["MAX_UPLOAD_BYTES"] = "3"

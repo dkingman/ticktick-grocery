@@ -94,7 +94,10 @@ async def import_ticktick_tasks(
 
     suffix = Path(image.filename or "upload").suffix
     if not suffix:
-        suffix = mimetypes.guess_extension(content_type) or ".img"
+        if content_type in {"image/heic", "image/heif"}:
+            suffix = ".heic"
+        else:
+            suffix = mimetypes.guess_extension(content_type) or ".img"
     temp_path: Path | None = None
     total_bytes = 0
     try:

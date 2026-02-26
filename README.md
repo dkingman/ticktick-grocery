@@ -15,6 +15,7 @@ Also includes an HTTP API service:
 - `uv`
 - Python 3.10+ (managed by `uv`)
 - TickTick OAuth app (`client_id` + `client_secret`)
+- HEIC/HEIF support requires `libheif` (Docker image installs `libheif1`).
 
 ## One-command run
 
@@ -150,6 +151,8 @@ curl -X POST "http://127.0.0.1:8090/api/ticktick/import" \
   -F "project=Errands" \
   -F "dry_run=false"
 ```
+
+HEIC/HEIF uploads are automatically converted to JPEG before sending to OpenAI.
 
 Success response:
 

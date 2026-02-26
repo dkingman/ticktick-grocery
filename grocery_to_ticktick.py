@@ -18,6 +18,7 @@ import requests
 from openai import OpenAI, OpenAIError
 
 from logging_setup import configure_logging
+from image_utils import normalize_image_for_openai
 from validation import ImportRequest, validate_import_request
 
 TICKTICK_API_BASE = "https://api.ticktick.com/open/v1"
@@ -93,53 +94,61 @@ def _clean_items(values: Iterable[str]) -> list[str]:
 def extract_ingredients(image_path: Path, model: str) -> list[str]:
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-    image_bytes = image_path.read_bytes()
-    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-    mime_type, _ = mimetypes.guess_type(str(image_path))
-    if not mime_type or not mime_type.startswith("image/"):
-        raise RuntimeError(f"Unsupported image type for file: {image_path}")
+    normalized_path, cleanup_paths = normalize_image_for_openai(image_path)
+    try:
+        image_bytes = normalized_path.read_bytes()
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        mime_type, _ = mimetypes.guess_type(str(normalized_path))
+        if not mime_type or not mime_type.startswith("image/"):
+            raise RuntimeError(f"Unsupported image type for file: {image_path}")
 
-    prompt = (
-        "Extract grocery ingredients from this image. "
-        "Return strict JSON in this exact shape: "
-        '{"ingredients": ["item 1", "item 2"]}. '
-        "Only include buyable grocery items, deduplicated. "
-        "Keep quantities and units exactly when present (example: '2 cups beef broth'). "
-        "Remove recipe instructions only."
-        "Skip salt, pepper, and water if they are in the list of ingredients."
-    )
+        prompt = (
+            "Extract grocery ingredients from this image. "
+            "Return strict JSON in this exact shape: "
+            '{"ingredients": ["item 1", "item 2"]}. '
+            "Only include buyable grocery items, deduplicated. "
+            "Keep quantities and units exactly when present (example: '2 cups beef broth'). "
+            "Remove recipe instructions only."
+            "Skip salt, pepper, and water if they are in the list of ingredients."
+        )
 
-    logger.info(
-        "OpenAI request start model=%s image=%s mime=%s bytes=%s",
-        model,
-        image_path.name,
-        mime_type,
-        len(image_bytes),
-    )
-    response = client.responses.create(
-        model=model,
-        input=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": prompt},
-                    {
-                        "type": "input_image",
-                        "image_url": f"data:{mime_type};base64,{image_b64}",
-                    },
-                ],
-            }
-        ],
-    )
+        logger.info(
+            "OpenAI request start model=%s image=%s mime=%s bytes=%s",
+            model,
+            normalized_path.name,
+            mime_type,
+            len(image_bytes),
+        )
+        response = client.responses.create(
+            model=model,
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": prompt},
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:{mime_type};base64,{image_b64}",
+                        },
+                    ],
+                }
+            ],
+        )
 
-    text = response.output_text.strip()
-    payload = _parse_json_from_model_text(text)
+        text = response.output_text.strip()
+        payload = _parse_json_from_model_text(text)
 
-    raw_items = payload.get("ingredients", [])
-    if not isinstance(raw_items, list):
-        raise RuntimeError("Unexpected JSON shape from model output")
+        raw_items = payload.get("ingredients", [])
+        if not isinstance(raw_items, list):
+            raise RuntimeError("Unexpected JSON shape from model output")
 
-    return _clean_items(str(item) for item in raw_items)
+        return _clean_items(str(item) for item in raw_items)
+    finally:
+        for cleanup_path in cleanup_paths:
+            try:
+                cleanup_path.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def _ticktick_headers(access_token: str) -> dict[str, str]:

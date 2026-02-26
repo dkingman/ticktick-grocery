@@ -67,6 +67,37 @@ class ExtractIngredientsTests(unittest.TestCase):
             image_url = captured["input"][0]["content"][1]["image_url"]
             self.assertTrue(image_url.startswith("data:image/png;base64,"))
 
+    def test_heic_is_converted_to_jpeg_before_upload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            heic_path = Path(tmp) / "input.heic"
+            heic_path.write_bytes(b"fake-heic-bytes")
+            jpeg_path = Path(tmp) / "converted.jpg"
+            jpeg_path.write_bytes(b"fake-jpg-bytes")
+
+            response = type("Response", (), {"output_text": '{"ingredients":["milk"]}'})()
+            captured: dict = {}
+
+            class FakeClient:
+                def __init__(self) -> None:
+                    self.responses = self
+
+                def create(self, **kwargs):
+                    captured.update(kwargs)
+                    return response
+
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
+                with patch("grocery_to_ticktick.OpenAI", return_value=FakeClient()):
+                    with patch(
+                        "grocery_to_ticktick.normalize_image_for_openai",
+                        return_value=(jpeg_path, []),
+                    ) as mock_normalize:
+                        items = app.extract_ingredients(heic_path, "gpt-4.1-mini")
+
+            self.assertEqual(items, ["milk"])
+            mock_normalize.assert_called_once_with(heic_path)
+            image_url = captured["input"][0]["content"][1]["image_url"]
+            self.assertTrue(image_url.startswith("data:image/jpeg;base64,"))
+
     def test_rejects_unsupported_non_image_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             image_path = Path(tmp) / "input.txt"
