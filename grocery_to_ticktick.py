@@ -1,6 +1,7 @@
 import argparse
 import base64
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -16,11 +17,14 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 import requests
 from openai import OpenAI, OpenAIError
 
+from logging_setup import configure_logging
 from validation import ImportRequest, validate_import_request
 
 TICKTICK_API_BASE = "https://api.ticktick.com/open/v1"
 TICKTICK_AUTHORIZE_URL = "https://ticktick.com/oauth/authorize"
 TICKTICK_TOKEN_URL = "https://ticktick.com/oauth/token"
+
+logger = logging.getLogger(__name__)
 
 
 class TickTickError(RuntimeError):
@@ -105,6 +109,13 @@ def extract_ingredients(image_path: Path, model: str) -> list[str]:
         "Skip salt, pepper, and water if they are in the list of ingredients."
     )
 
+    logger.info(
+        "OpenAI request start model=%s image=%s mime=%s bytes=%s",
+        model,
+        image_path.name,
+        mime_type,
+        len(image_bytes),
+    )
     response = client.responses.create(
         model=model,
         input=[
@@ -144,6 +155,12 @@ def _ticktick_request(
     access_token: str,
     json_payload: dict | None = None,
 ) -> dict | list:
+    logger.info(
+        "TickTick API request start method=%s path=%s has_payload=%s",
+        method,
+        path,
+        json_payload is not None,
+    )
     url = f"{TICKTICK_API_BASE}{path}"
     response = requests.request(
         method,
@@ -153,6 +170,12 @@ def _ticktick_request(
         timeout=30,
     )
     if response.status_code >= 400:
+        logger.error(
+            "TickTick API request failed method=%s path=%s status=%s",
+            method,
+            path,
+            response.status_code,
+        )
         raise TickTickError(
             f"TickTick API {method} {path} failed ({response.status_code}): {response.text}"
         )
@@ -196,6 +219,11 @@ def _exchange_code_for_token(
     basic = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode(
         "utf-8"
     )
+    logger.info(
+        "TickTick OAuth token exchange start redirect_uri=%s scope=%s",
+        redirect_uri,
+        scope,
+    )
     response = requests.post(
         TICKTICK_TOKEN_URL,
         headers={
@@ -211,6 +239,10 @@ def _exchange_code_for_token(
         timeout=30,
     )
     if response.status_code >= 400:
+        logger.error(
+            "TickTick OAuth token exchange failed status=%s",
+            response.status_code,
+        )
         raise OAuthFlowError(
             f"Token exchange failed ({response.status_code}): {response.text}"
         )
@@ -404,6 +436,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    configure_logging()
     args = parse_args()
 
     try:
@@ -451,6 +484,7 @@ def main() -> int:
         OpenAIError,
         requests.RequestException,
     ) as exc:
+        logger.exception("Unhandled error")
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 

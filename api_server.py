@@ -1,6 +1,7 @@
 import os
 import tempfile
 import mimetypes
+import logging
 from pathlib import Path
 
 import requests
@@ -17,6 +18,7 @@ DEFAULT_MODEL = "gpt-4.1-mini"
 DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 app = FastAPI(title="TickTick Grocery Import API")
+logger = logging.getLogger(__name__)
 
 
 def _get_required_env(name: str) -> str:
@@ -127,6 +129,7 @@ async def import_ticktick_tasks(
     except HTTPException:
         raise
     except (TickTickError, OpenAIError, RuntimeError, requests.RequestException) as exc:
+        logger.exception("Upstream failure")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail="Internal server error") from exc

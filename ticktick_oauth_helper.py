@@ -1,6 +1,7 @@
 import argparse
 import base64
 import json
+import logging
 import secrets
 import threading
 import webbrowser
@@ -10,8 +11,12 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 import requests
 
+from logging_setup import configure_logging
+
 AUTHORIZE_URL = "https://ticktick.com/oauth/authorize"
 TOKEN_URL = "https://ticktick.com/oauth/token"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -88,6 +93,11 @@ def exchange_code_for_token(
     basic = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode(
         "utf-8"
     )
+    logger.info(
+        "TickTick OAuth token exchange start redirect_uri=%s scope=%s",
+        redirect_uri,
+        scope,
+    )
     response = requests.post(
         TOKEN_URL,
         headers={
@@ -102,11 +112,17 @@ def exchange_code_for_token(
         },
         timeout=30,
     )
+    if response.status_code >= 400:
+        logger.error(
+            "TickTick OAuth token exchange failed status=%s",
+            response.status_code,
+        )
     response.raise_for_status()
     return response.json()
 
 
 def main() -> int:
+    configure_logging()
     args = parse_args()
     redirect_uri = f"http://{args.host}:{args.port}/callback"
     state = secrets.token_urlsafe(16)
