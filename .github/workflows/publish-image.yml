@@ -11,9 +11,62 @@ permissions:
   packages: write
 
 jobs:
+  smoke_test:
+    name: Smoke Test Container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: smoke-test:local
+
+      - name: Run container
+        run: |
+          docker run -d --rm \
+            -e API_KEY=smoke \
+            -e OPENAI_API_KEY=smoke \
+            -e TICKTICK_ACCESS_TOKEN=smoke \
+            -p 8090:8090 \
+            --name smoke-test \
+            smoke-test:local
+
+      - name: Wait for server
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8090/docs || true)
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs smoke-test || true
+          exit 1
+
+      - name: Verify auth required
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8090/api/ticktick/import || true)
+          if [ "$code" != "401" ]; then
+            docker logs smoke-test || true
+            exit 1
+          fi
+
+      - name: Stop container
+        if: always()
+        run: docker stop smoke-test
+
   build_and_push:
     name: Build and Push GHCR Image
     runs-on: ubuntu-latest
+    needs: smoke_test
     outputs:
       image_repository: ${{ steps.prep.outputs.image_repository }}
       image_digest: ${{ steps.build.outputs.digest }}
