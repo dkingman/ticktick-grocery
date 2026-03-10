@@ -428,6 +428,12 @@ def sync_items_to_project(
 
 
 def parse_args() -> argparse.Namespace:
+    default_provider = (
+        os.environ.get("DEFAULT_MODEL_PROVIDER")
+        or os.environ.get("AI_PROVIDER")
+        or "openai"
+    ).strip().casefold()
+
     parser = argparse.ArgumentParser(
         description="Extract ingredients from an image and add them to TickTick."
     )
@@ -439,9 +445,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--provider",
-        default=os.environ.get("AI_PROVIDER", "openai"),
+        default=default_provider,
         choices=sorted(SUPPORTED_PROVIDERS),
-        help='Model provider to use (default: env AI_PROVIDER or "openai")',
+        help=(
+            "Model provider to use "
+            '(default: env DEFAULT_MODEL_PROVIDER, fallback AI_PROVIDER, or "openai")'
+        ),
     )
     parser.add_argument(
         "--model",

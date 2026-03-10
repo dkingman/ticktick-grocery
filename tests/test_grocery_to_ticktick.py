@@ -53,6 +53,17 @@ class ParseArgsTests(unittest.TestCase):
         self.assertEqual(args.provider, "openai")
         self.assertEqual(args.model, "gpt-4.1-mini")
 
+    def test_default_model_provider_env_sets_provider(self) -> None:
+        with patch.dict(os.environ, {"DEFAULT_MODEL_PROVIDER": "anthropic"}, clear=False):
+            with patch.object(
+                sys,
+                "argv",
+                ["grocery_to_ticktick.py", "/tmp/image.jpg", "--project", "Errands"],
+            ):
+                args = app.parse_args()
+        self.assertEqual(args.provider, "anthropic")
+        self.assertEqual(args.model, "claude-3-5-sonnet-latest")
+
     def test_anthropic_provider_sets_anthropic_default_model(self) -> None:
         with patch.object(
             sys,

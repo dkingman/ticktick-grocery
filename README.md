@@ -46,6 +46,7 @@ export TICKTICK_CLIENT_ID="..."
 export TICKTICK_CLIENT_SECRET="..."
 export OPENAI_API_KEY="..."
 export ANTHROPIC_API_KEY="..."   # only needed when using --provider anthropic
+export DEFAULT_MODEL_PROVIDER="openai"  # optional: openai|anthropic (CLI + API default)
 ```
 
 With these set:
@@ -96,7 +97,7 @@ Options:
 
 - `--project "Errands"` required target list name
 - `--dry-run` to print extracted ingredients only (no TickTick auth/API calls)
-- `--provider openai|anthropic` to switch LLM provider (default: `openai`)
+- `--provider openai|anthropic` to switch LLM provider (default: `DEFAULT_MODEL_PROVIDER` if set, otherwise `openai`)
 - `--model ...` to choose another vision-capable model (defaults to `gpt-4.1-mini` for OpenAI, `claude-3-5-sonnet-latest` for Anthropic)
 - `--oauth-open-browser` to open TickTick auth URL automatically
 
