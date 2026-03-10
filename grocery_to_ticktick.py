@@ -15,10 +15,10 @@ from typing import Iterable
 from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 import requests
-from openai import OpenAI, OpenAIError
 
 from logging_setup import configure_logging
 from image_utils import normalize_image
+from providers import ProviderError, get_api_key_env_var, get_default_model, get_provider, get_provider_name
 from validation import ImportRequest, validate_import_request
 
 TICKTICK_API_BASE = "https://api.ticktick.com/open/v1"
@@ -92,7 +92,8 @@ def _clean_items(values: Iterable[str]) -> list[str]:
 
 
 def extract_ingredients(image_path: Path, model: str) -> list[str]:
-    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    provider_name = get_provider_name()
+    provider_fn = get_provider(provider_name)
 
     normalized_path, cleanup_paths = normalize_image(image_path)
     try:
@@ -113,29 +114,14 @@ def extract_ingredients(image_path: Path, model: str) -> list[str]:
         )
 
         logger.info(
-            "OpenAI request start model=%s image=%s mime=%s bytes=%s",
+            "LLM request start provider=%s model=%s image=%s mime=%s bytes=%s",
+            provider_name,
             model,
             normalized_path.name,
             mime_type,
             len(image_bytes),
         )
-        response = client.responses.create(
-            model=model,
-            input=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": prompt},
-                        {
-                            "type": "input_image",
-                            "image_url": f"data:{mime_type};base64,{image_b64}",
-                        },
-                    ],
-                }
-            ],
-        )
-
-        text = response.output_text.strip()
+        text = provider_fn(image_b64, mime_type, prompt, model).strip()
         payload = _parse_json_from_model_text(text)
 
         raw_items = payload.get("ingredients", [])
@@ -391,8 +377,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        default="gpt-4.1-mini",
-        help="Vision model to use for extraction (default: gpt-4.1-mini)",
+        default=None,
+        help="Vision model (default: provider-specific, e.g. gpt-4.1-mini for openai)",
     )
     parser.add_argument(
         "--dry-run",
@@ -448,6 +434,10 @@ def main() -> int:
     configure_logging()
     args = parse_args()
 
+    provider_name = get_provider_name()
+    if args.model is None:
+        args.model = get_default_model(provider_name)
+
     try:
         ticktick_access_token = ""
         if not args.dry_run:
@@ -459,7 +449,7 @@ def main() -> int:
             model=args.model,
             dry_run=args.dry_run,
             ticktick_access_token=ticktick_access_token,
-            llm_api_key=os.environ.get("OPENAI_API_KEY", ""),
+            llm_api_key=os.environ.get(get_api_key_env_var(provider_name), ""),
         )
         errors = validate_import_request(req)
         if errors:
@@ -490,7 +480,7 @@ def main() -> int:
     except (
         TickTickError,
         RuntimeError,
-        OpenAIError,
+        ProviderError,
         requests.RequestException,
     ) as exc:
         logger.exception("Unhandled error")

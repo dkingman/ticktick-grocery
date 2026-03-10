@@ -47,6 +47,13 @@ export TICKTICK_CLIENT_SECRET="..."
 export OPENAI_API_KEY="..."
 ```
 
+To use Anthropic instead of OpenAI for ingredient extraction:
+
+```bash
+export LLM_PROVIDER="anthropic"
+export ANTHROPIC_API_KEY="..."
+```
+
 With these set:
 
 ```bash
@@ -95,8 +102,13 @@ Options:
 
 - `--project "Errands"` required target list name
 - `--dry-run` to print extracted ingredients only (no TickTick auth/API calls)
-- `--model gpt-4.1-mini` to choose another vision-capable model
+- `--model` to choose another vision-capable model (defaults by provider)
 - `--oauth-open-browser` to open TickTick auth URL automatically
+
+LLM provider behavior:
+
+- `LLM_PROVIDER=openai` (default): uses `OPENAI_API_KEY`, default model `gpt-4.1-mini`
+- `LLM_PROVIDER=anthropic`: uses `ANTHROPIC_API_KEY`, default model `claude-sonnet-4-20250514`
 
 ## TickTick API notes
 
@@ -118,7 +130,7 @@ The API server is separate from the CLI OAuth flow and uses a static
 Required environment variables:
 
 ```bash
-export OPENAI_API_KEY="..."
+export OPENAI_API_KEY="..."   # or use ANTHROPIC_API_KEY with LLM_PROVIDER=anthropic
 export TICKTICK_ACCESS_TOKEN="..."
 export API_KEY="..."
 ```
@@ -126,6 +138,7 @@ export API_KEY="..."
 Optional environment variables:
 
 ```bash
+export LLM_PROVIDER="openai"                  # or "anthropic"
 export DEFAULT_TICKTICK_PROJECT="Errands"   # used when request omits project
 export MAX_UPLOAD_BYTES="52428800"          # default 50 MiB
 ```
@@ -152,7 +165,7 @@ curl -X POST "http://127.0.0.1:8090/api/ticktick/import" \
   -F "dry_run=false"
 ```
 
-HEIC/HEIF uploads are automatically converted to JPEG before sending to OpenAI.
+HEIC/HEIF uploads are automatically converted to JPEG before sending to the configured LLM provider.
 
 Success response:
 
@@ -171,7 +184,7 @@ Error status codes:
 - `401` unauthorized
 - `413` uploaded file too large
 - `415` unsupported media type
-- `502` upstream OpenAI/TickTick failures
+- `502` upstream LLM provider/TickTick failures
 - `500` server misconfiguration/internal error
 
 ## Container image
@@ -186,7 +199,9 @@ Run locally:
 
 ```bash
 docker run --rm -p 8090:8090 \
+  -e LLM_PROVIDER \
   -e OPENAI_API_KEY \
+  -e ANTHROPIC_API_KEY \
   -e TICKTICK_ACCESS_TOKEN \
   -e API_KEY \
   -e DEFAULT_TICKTICK_PROJECT \
