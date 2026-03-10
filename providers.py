@@ -3,6 +3,7 @@
 import logging
 import os
 
+from anthropic import Anthropic, APIError
 from openai import OpenAI, OpenAIError
 
 logger = logging.getLogger(__name__)
@@ -73,7 +74,37 @@ def extract_with_openai(
 def extract_with_anthropic(
     image_b64: str, mime_type: str, prompt: str, model: str
 ) -> str:
-    raise NotImplementedError
+    key_var = API_KEY_ENV_VARS["anthropic"]
+    api_key = os.environ.get(key_var, "").strip()
+    if not api_key:
+        raise ProviderError(f"Missing {key_var}")
+
+    try:
+        client = Anthropic(api_key=api_key)
+        logger.info("Anthropic request start model=%s", model)
+        message = client.messages.create(
+            model=model,
+            max_tokens=1024,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": mime_type,
+                                "data": image_b64,
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+        )
+        return message.content[0].text
+    except APIError as exc:
+        raise ProviderError(str(exc)) from exc
 
 
 _PROVIDERS = {
