@@ -114,5 +114,10 @@ jobs:
     needs: build_and_push
     uses: dkingman/nexus/.github/workflows/bump-nexus-image-ref.yml@main
     with:
+      image_key: TICK_IMAGE_REF
       image_ref: ${{ needs.build_and_push.outputs.image_ref }}
-    secrets: inherit
+      source_repo: ${{ github.repository }}
+      source_sha: ${{ github.sha }}
+      image_name: ticktick-grocery
+    secrets:
+      NEXUS_PAT: ${{ secrets.NEXUS_PAT }}
