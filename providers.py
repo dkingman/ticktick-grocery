@@ -3,6 +3,8 @@
 import logging
 import os
 
+from openai import OpenAI, OpenAIError
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,7 +42,32 @@ def get_api_key_env_var(provider: str) -> str:
 def extract_with_openai(
     image_b64: str, mime_type: str, prompt: str, model: str
 ) -> str:
-    raise NotImplementedError
+    key_var = API_KEY_ENV_VARS["openai"]
+    api_key = os.environ.get(key_var, "").strip()
+    if not api_key:
+        raise ProviderError(f"Missing {key_var}")
+
+    try:
+        client = OpenAI(api_key=api_key)
+        logger.info("OpenAI request start model=%s", model)
+        response = client.responses.create(
+            model=model,
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": prompt},
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:{mime_type};base64,{image_b64}",
+                        },
+                    ],
+                }
+            ],
+        )
+        return response.output_text
+    except OpenAIError as exc:
+        raise ProviderError(str(exc)) from exc
 
 
 def extract_with_anthropic(
