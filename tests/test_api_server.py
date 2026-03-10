@@ -15,6 +15,7 @@ class TickTickApiTests(unittest.TestCase):
             "API_KEY": "secret-key",
             "TICKTICK_ACCESS_TOKEN": "ticktick-token",
             "OPENAI_API_KEY": "openai-key",
+            "ANTHROPIC_API_KEY": "anthropic-key",
             "DEFAULT_TICKTICK_PROJECT": "Default Errands",
             "MAX_UPLOAD_BYTES": "52428800",
         }
@@ -59,8 +60,9 @@ class TickTickApiTests(unittest.TestCase):
     def test_heic_upload_without_suffix_uses_heic_extension(self) -> None:
         captured: dict = {}
 
-        def fake_extract(path, model):
+        def fake_extract(path, model, provider="openai"):
             captured["path"] = path
+            captured["provider"] = provider
             return []
 
         with patch.dict(os.environ, self.base_env, clear=True):
@@ -138,6 +140,37 @@ class TickTickApiTests(unittest.TestCase):
         mock_sync.assert_called_once_with(
             "ticktick-token", "Errands", ["Milk", "Bread"]
         )
+
+    def test_anthropic_provider_uses_default_anthropic_model(self) -> None:
+        with patch.dict(os.environ, self.base_env, clear=True):
+            with patch("api_server.extract_ingredients", return_value=["Milk"]) as mock_extract:
+                with patch(
+                    "api_server.sync_items_to_project",
+                    return_value=([], []),
+                ):
+                    response = self.client.post(
+                        "/api/ticktick/import",
+                        headers=self._auth_headers(),
+                        files={"image": ("list.png", b"fake", "image/png")},
+                        data={"provider": "anthropic"},
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        mock_extract.assert_called_once()
+        call_args = mock_extract.call_args
+        self.assertEqual(call_args.args[1], "claude-3-5-sonnet-latest")
+        self.assertEqual(call_args.kwargs["provider"], "anthropic")
+
+    def test_invalid_provider_returns_400(self) -> None:
+        with patch.dict(os.environ, self.base_env, clear=True):
+            response = self.client.post(
+                "/api/ticktick/import",
+                headers=self._auth_headers(),
+                files={"image": ("list.png", b"fake", "image/png")},
+                data={"provider": "unknown"},
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Provider", str(response.json()["detail"]))
 
     def test_upstream_failures_map_to_502(self) -> None:
         with patch.dict(os.environ, self.base_env, clear=True):

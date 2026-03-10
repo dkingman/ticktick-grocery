@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 import requests
+from anthropic import APIError as AnthropicError
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from openai import OpenAIError
 
@@ -14,7 +15,10 @@ from grocery_to_ticktick import (
     sync_items_to_project,
 )
 
-DEFAULT_MODEL = "gpt-4.1-mini"
+DEFAULT_PROVIDER = "openai"
+DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
+DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
+SUPPORTED_PROVIDERS = {"openai", "anthropic"}
 DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 app = FastAPI(title="TickTick Grocery Import API")
@@ -46,7 +50,8 @@ async def import_ticktick_tasks(
     image: UploadFile | None = File(default=None),
     project: str | None = Form(default=None),
     dry_run: bool = Form(default=False),
-    model: str = Form(default=DEFAULT_MODEL),
+    provider: str | None = Form(default=None),
+    model: str | None = Form(default=None),
     authorization: str | None = Header(default=None),
 ) -> dict:
     expected_api_key = _get_required_env("API_KEY")
@@ -66,13 +71,26 @@ async def import_ticktick_tasks(
     default_project = os.environ.get("DEFAULT_TICKTICK_PROJECT", "").strip()
     project_name = (project or default_project).strip()
 
+    provider_name = (
+        provider or os.environ.get("DEFAULT_MODEL_PROVIDER", DEFAULT_PROVIDER)
+    ).strip().casefold()
+
+    if provider_name not in SUPPORTED_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail='Provider must be one of: "openai", "anthropic"',
+        )
+
     openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+    anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     ticktick_access_token = os.environ.get("TICKTICK_ACCESS_TOKEN", "")
     early_errors: list[str] = []
     if not project_name:
         early_errors.append("Project name is required")
-    if not openai_api_key:
+    if provider_name == "openai" and not openai_api_key:
         early_errors.append("Missing OPENAI_API_KEY")
+    if provider_name == "anthropic" and not anthropic_api_key:
+        early_errors.append("Missing ANTHROPIC_API_KEY")
     if not dry_run and not ticktick_access_token:
         early_errors.append("Missing TickTick access token")
     if early_errors:
@@ -114,7 +132,16 @@ async def import_ticktick_tasks(
                     )
                 tmp.write(chunk)
 
-        ingredients = extract_ingredients(temp_path, model)
+        resolved_model = (model or "").strip() or (
+            DEFAULT_OPENAI_MODEL
+            if provider_name == "openai"
+            else DEFAULT_ANTHROPIC_MODEL
+        )
+        ingredients = extract_ingredients(
+            temp_path,
+            resolved_model,
+            provider=provider_name,
+        )
         created: list[str] = []
         skipped: list[str] = []
         if not dry_run and ingredients:
@@ -131,7 +158,13 @@ async def import_ticktick_tasks(
         }
     except HTTPException:
         raise
-    except (TickTickError, OpenAIError, RuntimeError, requests.RequestException) as exc:
+    except (
+        TickTickError,
+        OpenAIError,
+        AnthropicError,
+        RuntimeError,
+        requests.RequestException,
+    ) as exc:
         logger.exception("Upstream failure")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001

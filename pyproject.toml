@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Extract grocery items from images and sync them to TickTick"
 requires-python = ">=3.10"
 dependencies = [
+  "anthropic>=0.59.0",
   "fastapi>=0.116.1",
   "openai>=1.60.0",
   "pillow>=10.0.0",

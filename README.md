@@ -45,6 +45,7 @@ You can avoid passing args each time:
 export TICKTICK_CLIENT_ID="..."
 export TICKTICK_CLIENT_SECRET="..."
 export OPENAI_API_KEY="..."
+export ANTHROPIC_API_KEY="..."   # only needed when using --provider anthropic
 ```
 
 With these set:
@@ -95,7 +96,8 @@ Options:
 
 - `--project "Errands"` required target list name
 - `--dry-run` to print extracted ingredients only (no TickTick auth/API calls)
-- `--model gpt-4.1-mini` to choose another vision-capable model
+- `--provider openai|anthropic` to switch LLM provider (default: `openai`)
+- `--model ...` to choose another vision-capable model (defaults to `gpt-4.1-mini` for OpenAI, `claude-3-5-sonnet-latest` for Anthropic)
 - `--oauth-open-browser` to open TickTick auth URL automatically
 
 ## TickTick API notes
@@ -119,6 +121,7 @@ Required environment variables:
 
 ```bash
 export OPENAI_API_KEY="..."
+export ANTHROPIC_API_KEY="..."   # required if provider=anthropic
 export TICKTICK_ACCESS_TOKEN="..."
 export API_KEY="..."
 ```
@@ -127,6 +130,7 @@ Optional environment variables:
 
 ```bash
 export DEFAULT_TICKTICK_PROJECT="Errands"   # used when request omits project
+export DEFAULT_MODEL_PROVIDER="openai"      # optional: openai|anthropic
 export MAX_UPLOAD_BYTES="52428800"          # default 50 MiB
 ```
 
@@ -148,6 +152,7 @@ Example request:
 curl -X POST "http://127.0.0.1:8090/api/ticktick/import" \
   -H "Authorization: Bearer $API_KEY" \
   -F "image=@/path/to/image.jpg" \
+  -F "provider=openai" \
   -F "project=Errands" \
   -F "dry_run=false"
 ```
@@ -187,6 +192,7 @@ Run locally:
 ```bash
 docker run --rm -p 8090:8090 \
   -e OPENAI_API_KEY \
+  -e ANTHROPIC_API_KEY \
   -e TICKTICK_ACCESS_TOKEN \
   -e API_KEY \
   -e DEFAULT_TICKTICK_PROJECT \

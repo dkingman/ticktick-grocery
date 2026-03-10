@@ -10,7 +10,9 @@ class ValidateImportRequestTests(unittest.TestCase):
         defaults = {
             "image_path": Path(__file__),  # any existing file
             "project": "Groceries",
+            "provider": "openai",
             "openai_api_key": "sk-test",
+            "anthropic_api_key": "anthropic-test",
             "ticktick_access_token": "tt-token",
         }
         defaults.update(overrides)
@@ -37,6 +39,12 @@ class ValidateImportRequestTests(unittest.TestCase):
         errors = validate_import_request(req)
         self.assertEqual(len(errors), 1)
         self.assertIn("OPENAI_API_KEY", errors[0])
+
+    def test_missing_anthropic_api_key_returns_error(self) -> None:
+        req = self._valid_request(provider="anthropic", anthropic_api_key="")
+        errors = validate_import_request(req)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("ANTHROPIC_API_KEY", errors[0])
 
     def test_missing_ticktick_token_when_not_dry_run(self) -> None:
         req = self._valid_request(ticktick_access_token="", dry_run=False)

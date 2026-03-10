@@ -11,10 +11,12 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable, cast
 from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 import requests
+from anthropic import APIError as AnthropicError
+from anthropic import Anthropic
 from openai import OpenAI, OpenAIError
 
 from logging_setup import configure_logging
@@ -26,6 +28,10 @@ TICKTICK_AUTHORIZE_URL = "https://ticktick.com/oauth/authorize"
 TICKTICK_TOKEN_URL = "https://ticktick.com/oauth/token"
 
 logger = logging.getLogger(__name__)
+
+SUPPORTED_PROVIDERS = {"openai", "anthropic"}
+DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
+DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
 
 
 class TickTickError(RuntimeError):
@@ -91,8 +97,62 @@ def _clean_items(values: Iterable[str]) -> list[str]:
     return cleaned
 
 
-def extract_ingredients(image_path: Path, model: str) -> list[str]:
+def _extract_with_openai(image_b64: str, mime_type: str, model: str, prompt: str) -> str:
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    logger.info("Model request start provider=openai model=%s", model)
+    response_input: list[dict[str, Any]] = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": prompt},
+                {
+                    "type": "input_image",
+                    "image_url": f"data:{mime_type};base64,{image_b64}",
+                },
+            ],
+        }
+    ]
+    response = client.responses.create(
+        model=model,
+        input=cast(Any, response_input),  # type: ignore[arg-type]
+    )
+    return response.output_text.strip()
+
+
+def _extract_with_anthropic(image_b64: str, mime_type: str, model: str, prompt: str) -> str:
+    client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    logger.info("Model request start provider=anthropic model=%s", model)
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime_type,
+                        "data": image_b64,
+                    },
+                },
+            ],
+        }
+    ]
+    response = client.messages.create(
+        model=model,
+        max_tokens=1024,
+        messages=cast(Any, messages),  # type: ignore[arg-type]
+    )
+    chunks = [getattr(block, "text", "") for block in response.content]
+    return "\n".join(chunk for chunk in chunks if chunk).strip()
+
+
+def extract_ingredients(
+    image_path: Path, model: str, provider: str = "openai"
+) -> list[str]:
+    normalized_provider = provider.strip().casefold()
+    if normalized_provider not in SUPPORTED_PROVIDERS:
+        raise RuntimeError(f"Unsupported provider: {provider}")
 
     normalized_path, cleanup_paths = normalize_image_for_openai(image_path)
     try:
@@ -113,29 +173,17 @@ def extract_ingredients(image_path: Path, model: str) -> list[str]:
         )
 
         logger.info(
-            "OpenAI request start model=%s image=%s mime=%s bytes=%s",
+            "Model extraction start provider=%s model=%s image=%s mime=%s bytes=%s",
+            normalized_provider,
             model,
             normalized_path.name,
             mime_type,
             len(image_bytes),
         )
-        response = client.responses.create(
-            model=model,
-            input=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": prompt},
-                        {
-                            "type": "input_image",
-                            "image_url": f"data:{mime_type};base64,{image_b64}",
-                        },
-                    ],
-                }
-            ],
-        )
-
-        text = response.output_text.strip()
+        if normalized_provider == "openai":
+            text = _extract_with_openai(image_b64, mime_type, model, prompt)
+        else:
+            text = _extract_with_anthropic(image_b64, mime_type, model, prompt)
         payload = _parse_json_from_model_text(text)
 
         raw_items = payload.get("ingredients", [])
@@ -390,9 +438,19 @@ def parse_args() -> argparse.Namespace:
         help="TickTick project/list name (required)",
     )
     parser.add_argument(
+        "--provider",
+        default=os.environ.get("AI_PROVIDER", "openai"),
+        choices=sorted(SUPPORTED_PROVIDERS),
+        help='Model provider to use (default: env AI_PROVIDER or "openai")',
+    )
+    parser.add_argument(
         "--model",
-        default="gpt-4.1-mini",
-        help="Vision model to use for extraction (default: gpt-4.1-mini)",
+        default="",
+        help=(
+            "Vision model to use for extraction "
+            f"(default: {DEFAULT_OPENAI_MODEL} for openai, "
+            f"{DEFAULT_ANTHROPIC_MODEL} for anthropic)"
+        ),
     )
     parser.add_argument(
         "--dry-run",
@@ -441,7 +499,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Open TickTick auth URL automatically",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.model:
+        args.model = (
+            DEFAULT_OPENAI_MODEL
+            if args.provider == "openai"
+            else DEFAULT_ANTHROPIC_MODEL
+        )
+    return args
 
 
 def main() -> int:
@@ -456,10 +521,12 @@ def main() -> int:
         req = ImportRequest(
             image_path=args.image,
             project=args.project,
+            provider=args.provider,
             model=args.model,
             dry_run=args.dry_run,
             ticktick_access_token=ticktick_access_token,
             openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+            anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         )
         errors = validate_import_request(req)
         if errors:
@@ -467,7 +534,7 @@ def main() -> int:
                 print(error, file=sys.stderr)
             return 1
 
-        items = extract_ingredients(args.image, args.model)
+        items = extract_ingredients(args.image, args.model, provider=args.provider)
         if not items:
             print("No grocery items found in the image.")
             return 0
@@ -491,6 +558,7 @@ def main() -> int:
         TickTickError,
         RuntimeError,
         OpenAIError,
+        AnthropicError,
         requests.RequestException,
     ) as exc:
         logger.exception("Unhandled error")

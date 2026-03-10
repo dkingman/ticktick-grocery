@@ -8,6 +8,8 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
+from anthropic import APIError as AnthropicError
+from httpx import Request
 from openai import OpenAIError
 
 import grocery_to_ticktick as app
@@ -40,6 +42,33 @@ class ParseArgsTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as exc:
                 app.parse_args()
         self.assertEqual(exc.exception.code, 2)
+
+    def test_provider_defaults_to_openai_with_openai_model(self) -> None:
+        with patch.object(
+            sys,
+            "argv",
+            ["grocery_to_ticktick.py", "/tmp/image.jpg", "--project", "Errands"],
+        ):
+            args = app.parse_args()
+        self.assertEqual(args.provider, "openai")
+        self.assertEqual(args.model, "gpt-4.1-mini")
+
+    def test_anthropic_provider_sets_anthropic_default_model(self) -> None:
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "grocery_to_ticktick.py",
+                "/tmp/image.jpg",
+                "--project",
+                "Errands",
+                "--provider",
+                "anthropic",
+            ],
+        ):
+            args = app.parse_args()
+        self.assertEqual(args.provider, "anthropic")
+        self.assertEqual(args.model, "claude-3-5-sonnet-latest")
 
 
 class ExtractIngredientsTests(unittest.TestCase):
@@ -107,6 +136,43 @@ class ExtractIngredientsTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     app.extract_ingredients(image_path, "gpt-4.1-mini")
 
+    def test_anthropic_provider_uses_anthropic_client(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            image_path = Path(tmp) / "input.png"
+            image_path.write_bytes(b"fake-png-bytes")
+
+            captured: dict = {}
+
+            class TextBlock:
+                def __init__(self, text: str) -> None:
+                    self.text = text
+
+            class FakeAnthropicClient:
+                def __init__(self) -> None:
+                    self.messages = self
+
+                def create(self, **kwargs):
+                    captured.update(kwargs)
+                    return type(
+                        "Response",
+                        (),
+                        {"content": [TextBlock('{"ingredients":["milk"]}')]},
+                    )()
+
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "anthropic-key"}, clear=False):
+                with patch(
+                    "grocery_to_ticktick.Anthropic",
+                    return_value=FakeAnthropicClient(),
+                ):
+                    items = app.extract_ingredients(
+                        image_path,
+                        "claude-3-5-sonnet-latest",
+                        provider="anthropic",
+                    )
+
+            self.assertEqual(items, ["milk"])
+            self.assertEqual(captured["model"], "claude-3-5-sonnet-latest")
+
 
 class MainErrorHandlingTests(unittest.TestCase):
     def test_main_returns_one_on_openai_error(self) -> None:
@@ -117,6 +183,7 @@ class MainErrorHandlingTests(unittest.TestCase):
                 image=image_path,
                 project="Grocery",
                 model="gpt-4.1-mini",
+                provider="openai",
                 dry_run=False,
                 ticktick_access_token="test-token",
                 ticktick_client_id="",
@@ -133,6 +200,43 @@ class MainErrorHandlingTests(unittest.TestCase):
                     with patch(
                         "grocery_to_ticktick.extract_ingredients",
                         side_effect=OpenAIError("boom"),
+                    ):
+                        stderr = io.StringIO()
+                        with redirect_stderr(stderr):
+                            exit_code = app.main()
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("Error: boom", stderr.getvalue())
+
+    def test_main_returns_one_on_anthropic_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            image_path = Path(tmp) / "input.jpg"
+            image_path.write_bytes(b"fake-jpg-bytes")
+            args = Namespace(
+                image=image_path,
+                project="Grocery",
+                model="claude-3-5-sonnet-latest",
+                provider="anthropic",
+                dry_run=False,
+                ticktick_access_token="test-token",
+                ticktick_client_id="",
+                ticktick_client_secret="",
+                oauth_host="127.0.0.1",
+                oauth_port=8765,
+                oauth_scope="tasks:read tasks:write",
+                oauth_timeout_seconds=300,
+                oauth_open_browser=False,
+            )
+
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=False):
+                with patch("grocery_to_ticktick.parse_args", return_value=args):
+                    with patch(
+                        "grocery_to_ticktick.extract_ingredients",
+                        side_effect=AnthropicError(
+                            message="boom",
+                            request=Request("POST", "https://example.com"),
+                            body={},
+                        ),
                     ):
                         stderr = io.StringIO()
                         with redirect_stderr(stderr):
