@@ -8,7 +8,7 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
-from openai import OpenAIError
+from providers import ProviderError
 
 import grocery_to_ticktick as app
 
@@ -48,24 +48,19 @@ class ExtractIngredientsTests(unittest.TestCase):
             image_path = Path(tmp) / "input.png"
             image_path.write_bytes(b"fake-png-bytes")
 
-            response = type("Response", (), {"output_text": '{"ingredients":["milk"]}'})()
             captured: dict = {}
 
-            class FakeClient:
-                def __init__(self) -> None:
-                    self.responses = self
+            def fake_provider(image_b64, mime_type, prompt, model):
+                captured["mime_type"] = mime_type
+                captured["image_b64"] = image_b64
+                return '{"ingredients":["milk"]}'
 
-                def create(self, **kwargs):
-                    captured.update(kwargs)
-                    return response
-
-            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
-                with patch("grocery_to_ticktick.OpenAI", return_value=FakeClient()):
+            with patch("grocery_to_ticktick.get_provider_name", return_value="openai"):
+                with patch("grocery_to_ticktick.get_provider", return_value=fake_provider):
                     items = app.extract_ingredients(image_path, "gpt-4.1-mini")
 
             self.assertEqual(items, ["milk"])
-            image_url = captured["input"][0]["content"][1]["image_url"]
-            self.assertTrue(image_url.startswith("data:image/png;base64,"))
+            self.assertEqual(captured["mime_type"], "image/png")
 
     def test_heic_is_converted_to_jpeg_before_upload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -74,42 +69,37 @@ class ExtractIngredientsTests(unittest.TestCase):
             jpeg_path = Path(tmp) / "converted.jpg"
             jpeg_path.write_bytes(b"fake-jpg-bytes")
 
-            response = type("Response", (), {"output_text": '{"ingredients":["milk"]}'})()
             captured: dict = {}
 
-            class FakeClient:
-                def __init__(self) -> None:
-                    self.responses = self
+            def fake_provider(image_b64, mime_type, prompt, model):
+                captured["mime_type"] = mime_type
+                return '{"ingredients":["milk"]}'
 
-                def create(self, **kwargs):
-                    captured.update(kwargs)
-                    return response
-
-            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
-                with patch("grocery_to_ticktick.OpenAI", return_value=FakeClient()):
+            with patch("grocery_to_ticktick.get_provider_name", return_value="openai"):
+                with patch("grocery_to_ticktick.get_provider", return_value=fake_provider):
                     with patch(
-                        "grocery_to_ticktick.normalize_image_for_openai",
+                        "grocery_to_ticktick.normalize_image",
                         return_value=(jpeg_path, []),
                     ) as mock_normalize:
                         items = app.extract_ingredients(heic_path, "gpt-4.1-mini")
 
             self.assertEqual(items, ["milk"])
             mock_normalize.assert_called_once_with(heic_path)
-            image_url = captured["input"][0]["content"][1]["image_url"]
-            self.assertTrue(image_url.startswith("data:image/jpeg;base64,"))
+            self.assertEqual(captured["mime_type"], "image/jpeg")
 
     def test_rejects_unsupported_non_image_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             image_path = Path(tmp) / "input.txt"
             image_path.write_text("not an image", encoding="utf-8")
 
-            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
-                with self.assertRaises(RuntimeError):
-                    app.extract_ingredients(image_path, "gpt-4.1-mini")
+            with patch("grocery_to_ticktick.get_provider_name", return_value="openai"):
+                with patch("grocery_to_ticktick.get_provider"):
+                    with self.assertRaises(RuntimeError):
+                        app.extract_ingredients(image_path, "gpt-4.1-mini")
 
 
 class MainErrorHandlingTests(unittest.TestCase):
-    def test_main_returns_one_on_openai_error(self) -> None:
+    def test_main_returns_one_on_provider_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             image_path = Path(tmp) / "input.jpg"
             image_path.write_bytes(b"fake-jpg-bytes")
@@ -132,7 +122,7 @@ class MainErrorHandlingTests(unittest.TestCase):
                 with patch("grocery_to_ticktick.parse_args", return_value=args):
                     with patch(
                         "grocery_to_ticktick.extract_ingredients",
-                        side_effect=OpenAIError("boom"),
+                        side_effect=ProviderError("boom"),
                     ):
                         stderr = io.StringIO()
                         with redirect_stderr(stderr):

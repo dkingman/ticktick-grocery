@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from openai import OpenAIError
+from providers import ProviderError
 
 import api_server
 
@@ -142,7 +142,7 @@ class TickTickApiTests(unittest.TestCase):
     def test_upstream_failures_map_to_502(self) -> None:
         with patch.dict(os.environ, self.base_env, clear=True):
             with patch(
-                "api_server.extract_ingredients", side_effect=OpenAIError("boom")
+                "api_server.extract_ingredients", side_effect=ProviderError("boom")
             ):
                 response = self.client.post(
                     "/api/ticktick/import",
@@ -151,6 +151,35 @@ class TickTickApiTests(unittest.TestCase):
                 )
         self.assertEqual(response.status_code, 502)
         self.assertIn("boom", response.json()["detail"])
+
+
+    def test_anthropic_provider_validates_anthropic_key(self) -> None:
+        env = dict(self.base_env)
+        env["LLM_PROVIDER"] = "anthropic"
+        env["ANTHROPIC_API_KEY"] = "ant-key"
+        del env["OPENAI_API_KEY"]
+        with patch.dict(os.environ, env, clear=True):
+            with patch("api_server.extract_ingredients", return_value=["Milk"]):
+                response = self.client.post(
+                    "/api/ticktick/import",
+                    headers=self._auth_headers(),
+                    files={"image": ("list.png", b"fake", "image/png")},
+                    data={"dry_run": "true"},
+                )
+        self.assertEqual(response.status_code, 200)
+
+    def test_missing_provider_api_key_returns_400(self) -> None:
+        env = dict(self.base_env)
+        env["LLM_PROVIDER"] = "anthropic"
+        del env["OPENAI_API_KEY"]
+        # No ANTHROPIC_API_KEY set
+        with patch.dict(os.environ, env, clear=True):
+            response = self.client.post(
+                "/api/ticktick/import",
+                headers=self._auth_headers(),
+                files={"image": ("list.png", b"fake", "image/png")},
+            )
+        self.assertEqual(response.status_code, 400)
 
 
 if __name__ == "__main__":

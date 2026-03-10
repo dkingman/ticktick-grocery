@@ -10,7 +10,7 @@ class ValidateImportRequestTests(unittest.TestCase):
         defaults = {
             "image_path": Path(__file__),  # any existing file
             "project": "Groceries",
-            "openai_api_key": "sk-test",
+            "llm_api_key": "sk-test",
             "ticktick_access_token": "tt-token",
         }
         defaults.update(overrides)
@@ -32,11 +32,11 @@ class ValidateImportRequestTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("Project", errors[0])
 
-    def test_missing_openai_api_key_returns_error(self) -> None:
-        req = self._valid_request(openai_api_key="")
+    def test_missing_llm_api_key_returns_error(self) -> None:
+        req = self._valid_request(llm_api_key="")
         errors = validate_import_request(req)
         self.assertEqual(len(errors), 1)
-        self.assertIn("OPENAI_API_KEY", errors[0])
+        self.assertIn("API key", errors[0])
 
     def test_missing_ticktick_token_when_not_dry_run(self) -> None:
         req = self._valid_request(ticktick_access_token="", dry_run=False)
@@ -58,7 +58,7 @@ class ValidateImportRequestTests(unittest.TestCase):
         req = ImportRequest(
             image_path=Path("/nonexistent/image.png"),
             project="",
-            openai_api_key="",
+            llm_api_key="",
             ticktick_access_token="",
         )
         errors = validate_import_request(req)
