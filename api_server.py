@@ -6,15 +6,14 @@ from pathlib import Path
 
 import requests
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
-from openai import OpenAIError
 
 from grocery_to_ticktick import (
     TickTickError,
     extract_ingredients,
     sync_items_to_project,
 )
+from providers import ProviderError, get_api_key_env_var, get_default_model, get_provider_name
 
-DEFAULT_MODEL = "gpt-4.1-mini"
 DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 app = FastAPI(title="TickTick Grocery Import API")
@@ -46,13 +45,17 @@ async def import_ticktick_tasks(
     image: UploadFile | None = File(default=None),
     project: str | None = Form(default=None),
     dry_run: bool = Form(default=False),
-    model: str = Form(default=DEFAULT_MODEL),
+    model: str | None = Form(default=None),
     authorization: str | None = Header(default=None),
 ) -> dict:
     expected_api_key = _get_required_env("API_KEY")
     provided_token = _get_bearer_token(authorization)
     if provided_token != expected_api_key:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+    provider_name = get_provider_name()
+    if model is None:
+        model = get_default_model(provider_name)
 
     if image is None:
         raise HTTPException(
@@ -66,13 +69,14 @@ async def import_ticktick_tasks(
     default_project = os.environ.get("DEFAULT_TICKTICK_PROJECT", "").strip()
     project_name = (project or default_project).strip()
 
-    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+    llm_api_key_var = get_api_key_env_var(provider_name)
+    llm_api_key = os.environ.get(llm_api_key_var, "")
     ticktick_access_token = os.environ.get("TICKTICK_ACCESS_TOKEN", "")
     early_errors: list[str] = []
     if not project_name:
         early_errors.append("Project name is required")
-    if not openai_api_key:
-        early_errors.append("Missing OPENAI_API_KEY")
+    if not llm_api_key:
+        early_errors.append(f"Missing {llm_api_key_var}")
     if not dry_run and not ticktick_access_token:
         early_errors.append("Missing TickTick access token")
     if early_errors:
@@ -131,7 +135,7 @@ async def import_ticktick_tasks(
         }
     except HTTPException:
         raise
-    except (TickTickError, OpenAIError, RuntimeError, requests.RequestException) as exc:
+    except (TickTickError, ProviderError, RuntimeError, requests.RequestException) as exc:
         logger.exception("Upstream failure")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
