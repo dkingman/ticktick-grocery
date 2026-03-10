@@ -1,4 +1,4 @@
-"""Helpers for normalizing images before sending to OpenAI."""
+"""Helpers for normalizing images before sending to vision LLM providers."""
 
 from __future__ import annotations
 
@@ -24,10 +24,10 @@ def _is_heic(path: Path, content_type: str | None = None) -> bool:
     return path.suffix.lower() in HEIC_EXTENSIONS
 
 
-def normalize_image_for_openai(
+def normalize_image(
     image_path: Path, content_type: str | None = None
 ) -> tuple[Path, list[Path]]:
-    """Return a path OpenAI accepts plus any temp files to clean up."""
+    """Return an image path suitable for LLM vision APIs plus any temp files to clean up."""
     _register_heic_mimetypes()
     if not _is_heic(image_path, content_type):
         return image_path, []

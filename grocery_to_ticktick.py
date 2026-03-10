@@ -18,7 +18,7 @@ import requests
 from openai import OpenAI, OpenAIError
 
 from logging_setup import configure_logging
-from image_utils import normalize_image_for_openai
+from image_utils import normalize_image
 from validation import ImportRequest, validate_import_request
 
 TICKTICK_API_BASE = "https://api.ticktick.com/open/v1"
@@ -94,7 +94,7 @@ def _clean_items(values: Iterable[str]) -> list[str]:
 def extract_ingredients(image_path: Path, model: str) -> list[str]:
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-    normalized_path, cleanup_paths = normalize_image_for_openai(image_path)
+    normalized_path, cleanup_paths = normalize_image(image_path)
     try:
         image_bytes = normalized_path.read_bytes()
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")

@@ -88,7 +88,7 @@ class ExtractIngredientsTests(unittest.TestCase):
             with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
                 with patch("grocery_to_ticktick.OpenAI", return_value=FakeClient()):
                     with patch(
-                        "grocery_to_ticktick.normalize_image_for_openai",
+                        "grocery_to_ticktick.normalize_image",
                         return_value=(jpeg_path, []),
                     ) as mock_normalize:
                         items = app.extract_ingredients(heic_path, "gpt-4.1-mini")
