@@ -13,7 +13,7 @@ class ImportRequest:
     model: str = "gpt-4.1-mini"
     dry_run: bool = False
     ticktick_access_token: str = ""
-    openai_api_key: str = ""
+    llm_api_key: str = ""
 
 
 def validate_import_request(req: ImportRequest) -> list[str]:
@@ -23,8 +23,8 @@ def validate_import_request(req: ImportRequest) -> list[str]:
         errors.append(f"Image not found: {req.image_path}")
     if not req.project.strip():
         errors.append("Project name is required")
-    if not req.openai_api_key:
-        errors.append("Missing OPENAI_API_KEY")
+    if not req.llm_api_key:
+        errors.append("Missing LLM API key")
     if not req.dry_run and not req.ticktick_access_token:
         errors.append("Missing TickTick access token")
     return errors

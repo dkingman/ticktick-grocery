@@ -459,7 +459,7 @@ def main() -> int:
             model=args.model,
             dry_run=args.dry_run,
             ticktick_access_token=ticktick_access_token,
-            openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+            llm_api_key=os.environ.get("OPENAI_API_KEY", ""),
         )
         errors = validate_import_request(req)
         if errors:
