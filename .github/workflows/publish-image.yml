@@ -112,6 +112,9 @@ jobs:
   bump_nexus:
     name: Open PR to bump digest in nexus
     needs: build_and_push
+    permissions:
+      contents: write
+      pull-requests: write
     uses: dkingman/lab-bot/.github/workflows/bump-image-ref.yml@main
     with:
       target_repo: dkingman/nexus
