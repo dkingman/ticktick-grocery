@@ -158,7 +158,7 @@ class TickTickApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         mock_extract.assert_called_once()
         call_args = mock_extract.call_args
-        self.assertEqual(call_args.args[1], "claude-3-5-sonnet-latest")
+        self.assertEqual(call_args.args[1], "claude-sonnet-4-6")
         self.assertEqual(call_args.kwargs["provider"], "anthropic")
 
     def test_invalid_provider_returns_400(self) -> None:

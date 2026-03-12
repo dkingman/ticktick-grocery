@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_PROVIDERS = {"openai", "anthropic"}
 DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
-DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
+DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
 
 class TickTickError(RuntimeError):

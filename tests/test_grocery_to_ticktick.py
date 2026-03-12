@@ -62,7 +62,7 @@ class ParseArgsTests(unittest.TestCase):
             ):
                 args = app.parse_args()
         self.assertEqual(args.provider, "anthropic")
-        self.assertEqual(args.model, "claude-3-5-sonnet-latest")
+        self.assertEqual(args.model, "claude-sonnet-4-6")
 
     def test_anthropic_provider_sets_anthropic_default_model(self) -> None:
         with patch.object(
@@ -79,7 +79,7 @@ class ParseArgsTests(unittest.TestCase):
         ):
             args = app.parse_args()
         self.assertEqual(args.provider, "anthropic")
-        self.assertEqual(args.model, "claude-3-5-sonnet-latest")
+        self.assertEqual(args.model, "claude-sonnet-4-6")
 
 
 class ExtractIngredientsTests(unittest.TestCase):
@@ -177,12 +177,12 @@ class ExtractIngredientsTests(unittest.TestCase):
                 ):
                     items = app.extract_ingredients(
                         image_path,
-                        "claude-3-5-sonnet-latest",
+                        "claude-sonnet-4-6",
                         provider="anthropic",
                     )
 
             self.assertEqual(items, ["milk"])
-            self.assertEqual(captured["model"], "claude-3-5-sonnet-latest")
+            self.assertEqual(captured["model"], "claude-sonnet-4-6")
 
 
 class MainErrorHandlingTests(unittest.TestCase):
@@ -226,7 +226,7 @@ class MainErrorHandlingTests(unittest.TestCase):
             args = Namespace(
                 image=image_path,
                 project="Grocery",
-                model="claude-3-5-sonnet-latest",
+                model="claude-sonnet-4-6",
                 provider="anthropic",
                 dry_run=False,
                 ticktick_access_token="test-token",

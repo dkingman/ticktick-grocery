@@ -17,7 +17,7 @@ from grocery_to_ticktick import (
 
 DEFAULT_PROVIDER = "openai"
 DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
-DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
+DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
 SUPPORTED_PROVIDERS = {"openai", "anthropic"}
 DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
